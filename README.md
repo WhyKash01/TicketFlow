@@ -9,22 +9,22 @@
 ```mermaid
 graph TD
     %% Client & Edge Layer
-    Client[React 19 Frontend] -->|JWT / HTTPS| Gateway[Basic API Gateway (Spring Boot MVC)]
+    Client["React 19 Frontend"] -->|JWT / HTTPS| Gateway["Basic API Gateway (Spring Boot MVC)"]
 
     %% Edge Layer
     subgraph Edge_Layer ["Edge Layer"]
         Gateway
-        RedisRL[Redis Rate Limiter]
+        RedisRL["Redis Rate Limiter"]
         Gateway -.->|Rate Limit Check| RedisRL
     end
 
     %% Core Services
     subgraph Spring_Boot_Microservices ["Spring Boot Microservices"]
-        Auth[Auth / User Service]
-        Catalog[Catalog Service]
-        Booking[Booking Service]
-        Payment[Payment Service]
-        Notify[Notification Service]
+        Auth["Auth / User Service"]
+        Catalog["Catalog Service"]
+        Booking["Booking Service"]
+        Payment["Payment Service"]
+        Notify["Notification Service"]
     end
 
     Gateway -->|Authentication| Auth
@@ -34,8 +34,8 @@ graph TD
 
     %% Booking Allocation
     subgraph Seat_Allocation ["Seat Allocation Engine"]
-        ST[In-Memory Segment Tree]
-        RedisLock[Redis Atomic Seat Locks]
+        ST["In-Memory Segment Tree"]
+        RedisLock["Redis Atomic Seat Locks"]
         Booking -->|1. Find Contiguous Seats| ST
         ST -->|2. Candidate Seat Block| RedisLock
         RedisLock -->|3. Atomic Reservation with TTL| Booking
@@ -43,12 +43,12 @@ graph TD
 
     %% Data Layer
     subgraph Data_Infrastructure ["Data Infrastructure"]
-        Redis[Redis Cache]
-        DB_Catalog[(Catalog PostgreSQL)]
-        DB_Booking[(Booking PostgreSQL)]
-        DB_Payment[(Payment PostgreSQL)]
-        DB_Notify[(Notification PostgreSQL)]
-        Broker[RabbitMQ Event Bus]
+        Redis["Redis Cache"]
+        DB_Catalog[("Catalog PostgreSQL")]
+        DB_Booking[("Booking PostgreSQL")]
+        DB_Payment[("Payment PostgreSQL")]
+        DB_Notify[("Notification PostgreSQL")]
+        Broker["RabbitMQ Event Bus"]
     end
 
     %% Catalog Flow
@@ -74,10 +74,10 @@ graph TD
     %% Notification
     Broker -->|PaymentSuccess / BookingConfirmed| Notify
     Notify -->|Notification Logs| DB_Notify
-    Notify -->|Email / SMS Confirmation| User[User]
+    Notify -->|Email / SMS Confirmation| User["User"]
 
     %% Seat Expiry
-    Expiry[Reservation Expiry Worker]
+    Expiry["Reservation Expiry Worker"]
     RedisLock -.->|TTL Expiry| Expiry
     Expiry -->|Release Expired Holds| Booking
 
