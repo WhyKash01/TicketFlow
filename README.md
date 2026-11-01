@@ -143,7 +143,7 @@ The TicketFlow architecture coordinates high-velocity traffic through a 10-step 
 
 ## 💡 Core Backend Engineering Highlights
 
-### 1. In-Memory Segment Tree Contiguous Seat Allocation (O(\log N))
+### 1. In-Memory Segment Tree Contiguous Seat Allocation (O(log N))
 * **Challenge**: Moviegoers frequently book seats in groups (2 to 6 people) and require consecutive seats in the same row without gaps. Traditional relational database linear queries (`ORDER BY col_index`) create database contention and high CPU overhead under flash-sale spikes.
 * **Implementation** ([`SegmentTree.java`](file:///c:/yash/TicketFlow/backend/booking-service/src/main/java/com/ticketflow/booking/algorithm/SegmentTree.java)):
   * Each row of a cinema screen is modeled as an array where `1 = Available`, `0 = Booked / Locked`.
