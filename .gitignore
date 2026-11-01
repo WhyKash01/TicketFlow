@@ -1,11 +1,16 @@
 # Node & Frontend
 frontend/node_modules/
 frontend/dist/
-frontend/.env.local
-frontend/.env.*.local
 frontend/npm-debug.log*
 frontend/yarn-debug.log*
 frontend/yarn-error.log*
+
+# Environment & Secrets (Never commit secrets to GitHub)
+.env
+.env.*
+*.env
+!.env.example
+!**/.env.example
 
 # Java & Maven
 backend/**/target/
