@@ -24,3 +24,4 @@ public class CorsConfig implements WebMvcConfigurer {
         return new RestTemplate();
     }
 }
+

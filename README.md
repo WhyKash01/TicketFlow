@@ -9,7 +9,7 @@
 ```mermaid
 graph TD
     %% Client & Edge Layer
-    Client[React 19 Frontend] -->|JWT / HTTPS| Gateway[Spring Cloud API Gateway]
+    Client[React 19 Frontend] -->|JWT / HTTPS| Gateway[Basic API Gateway (Spring Boot MVC)]
 
     %% Edge Layer
     subgraph Edge_Layer ["Edge Layer"]
@@ -103,7 +103,7 @@ The TicketFlow architecture coordinates high-velocity traffic through a 10-step 
 [User Request]
        │
        ▼
- 1. Edge Layer: Spring Cloud Gateway authenticates JWT & checks Redis Rate Limiter
+ 1. Edge Layer: Basic Spring Boot API Gateway handles CORS, routes `/api/**` traffic, and validates requests
        │
        ▼
  2. Contiguous Seat Search: In-Memory Segment Tree queries optimal continuous seat blocks in O(log N)
@@ -181,7 +181,7 @@ The TicketFlow architecture coordinates high-velocity traffic through a 10-step 
 | Layer | Technologies |
 |---|---|
 | **Frontend** | React 19 / TypeScript, Redux Toolkit, shadcn/ui, Tailwind CSS, Lucide Icons, Vite |
-| **API Gateway** | Spring Cloud Gateway, Reactive WebFlux, Redis Rate Limiter, CORS |
+| **API Gateway** | Basic Spring Boot MVC Reverse Proxy Gateway, Tomcat, Actuator, DevTools, CORS |
 | **Service Discovery** | Netflix Eureka Server (`service-registry`) |
 | **Backend Microservices** | Spring Boot 3.2.5, Java 17 / 20, Spring Data JPA, Spring AMQP, DevTools |
 | **Data Storage** | PostgreSQL 16 (Multi-DB schema isolation), Redis 7 (Distributed Locking & Cache) |
@@ -198,7 +198,7 @@ TicketFlow/
 │   ├── pom.xml                               # Parent Maven POM (Spring Boot 3.2.5, Cloud 2023.0.1)
 │   ├── shared-dto/                           # DTOs, Enums & RabbitMQ Domain Events
 │   ├── service-registry/                     # Eureka Service Discovery Server (Port 8761)
-│   ├── api-gateway/                          # Spring Cloud Gateway & Redis Rate Limiter (Port 8080)
+│   ├── api-gateway/                          # Basic Spring Boot MVC Reverse Proxy Gateway (Port 8080)
 │   ├── catalog-service/                      # Movies, Events, Theatres, Screens & Shows (Port 8081)
 │   ├── booking-service/                      # Segment Tree, Redis Locks, Saga & Outbox (Port 8082)
 │   ├── payment-service/                      # Payment Transactions & Compensation (Port 8083)
@@ -316,10 +316,11 @@ Start the services in the following order (in separate terminal tabs):
    ```
    *Dashboard available at: [http://localhost:8761](http://localhost:8761)*
 
-2. **API Gateway**:
+2. **API Gateway (Port 8080)**:
    ```powershell
    mvn spring-boot:run -pl api-gateway
    ```
+   *Dashboard & Routes: [http://localhost:8080/](http://localhost:8080/)*
    *Health endpoint: [http://localhost:8080/actuator/health](http://localhost:8080/actuator/health)*
 
 3. **Core Services**:
