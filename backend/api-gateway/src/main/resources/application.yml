@@ -4,59 +4,19 @@ server:
 spring:
   application:
     name: api-gateway
-  cloud:
-    gateway:
-      globalcors:
-        cors-configurations:
-          '[/**]':
-            allowedOrigins:
-              - "http://localhost:3000"
-              - "http://localhost:5173"
-            allowedMethods:
-              - GET
-              - POST
-              - PUT
-              - DELETE
-              - OPTIONS
-            allowedHeaders: "*"
-            allowCredentials: true
-      routes:
-        # Catalog Service Routes
-        - id: catalog-service
-          uri: lb://catalog-service
-          predicates:
-            - Path=/api/catalog/**
-        # Booking Service Routes
-        - id: booking-service
-          uri: lb://booking-service
-          predicates:
-            - Path=/api/bookings/**
-        # Payment Service Routes
-        - id: payment-service
-          uri: lb://payment-service
-          predicates:
-            - Path=/api/payments/**
-        # Notification Service Routes
-        - id: notification-service
-          uri: lb://notification-service
-          predicates:
-            - Path=/api/notifications/**
 
-eureka:
-  client:
-    service-url:
-      defaultZone: http://localhost:8761/eureka/
-  instance:
-    prefer-ip-address: true
+# Configurable backend microservice target URLs
+services:
+  catalog: ${CATALOG_SERVICE_URL:http://localhost:8081}
+  booking: ${BOOKING_SERVICE_URL:http://localhost:8082}
+  payment: ${PAYMENT_SERVICE_URL:http://localhost:8083}
+  notification: ${NOTIFICATION_SERVICE_URL:http://localhost:8084}
 
 management:
-  endpoint:
-    gateway:
-      enabled: true
-    health:
-      show-details: always
   endpoints:
     web:
       exposure:
-        include: "*"
-
+        include: health,info
+  endpoint:
+    health:
+      show-details: always
