@@ -19,20 +19,32 @@ export default function App() {
   const [currentPage, setCurrentPage] = useState<PageState>('home');
 
   useEffect(() => {
+    // Listen for auth expiration events from API interceptor
+    const handleAuthExpired = () => {
+      dispatch(logout());
+    };
+    window.addEventListener('ticketflow:auth-expired', handleAuthExpired);
+
     const token = localStorage.getItem('ticketflow_access_token');
     if (token) {
       authApi.getCurrentUser()
-        .then((user) => {
+        .then(({ user, isUnauthorized }) => {
           if (user) {
             dispatch(updateUser(user));
-          } else {
+          } else if (isUnauthorized) {
+            // Only log out if the backend explicitly rejected the token as invalid/expired
             dispatch(logout());
           }
+          // If offline or network error, keep stored user profile active
         })
         .catch(() => {
-          // Leave stored session or offline fallback
+          // Leave stored session active
         });
     }
+
+    return () => {
+      window.removeEventListener('ticketflow:auth-expired', handleAuthExpired);
+    };
   }, [dispatch]);
 
   const handleSelectMovie = (movie: Movie) => {

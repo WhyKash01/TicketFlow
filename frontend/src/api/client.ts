@@ -28,30 +28,62 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+// Singleton in-flight refresh promise to prevent token rotation race condition
+let activeRefreshPromise: Promise<string | null> | null = null;
+
+async function requestNewAccessToken(): Promise<string | null> {
+  const refreshToken = localStorage.getItem('ticketflow_refresh_token');
+  if (!refreshToken) return null;
+
+  try {
+    const res = await axios.post<ApiResponse<AuthResponse>>(
+      `${import.meta.env.VITE_API_BASE_URL || '/api'}/auth/refresh`,
+      { refreshToken }
+    );
+    if (res.data?.success && res.data.data) {
+      const { accessToken, refreshToken: newRefreshToken } = res.data.data;
+      localStorage.setItem('ticketflow_access_token', accessToken);
+      localStorage.setItem('ticketflow_refresh_token', newRefreshToken);
+      return accessToken;
+    }
+  } catch {
+    localStorage.removeItem('ticketflow_access_token');
+    localStorage.removeItem('ticketflow_refresh_token');
+    localStorage.removeItem('ticketflow_user');
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('ticketflow:auth-expired'));
+    }
+  }
+  return null;
+}
+
 // Automatic Refresh Token Handling on 401 Unauthorized
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    const requestUrl = originalRequest?.url || '';
+
+    // Do not attempt refresh on auth endpoints or if already retried
+    const isAuthEndpoint =
+      requestUrl.includes('/auth/login') ||
+      requestUrl.includes('/auth/register') ||
+      requestUrl.includes('/auth/refresh') ||
+      requestUrl.includes('/auth/logout');
+
+    if (error.response?.status === 401 && !originalRequest?._retry && !isAuthEndpoint) {
       originalRequest._retry = true;
-      const refreshToken = localStorage.getItem('ticketflow_refresh_token');
-      if (refreshToken) {
-        try {
-          const res = await axios.post<ApiResponse<AuthResponse>>(
-            `${import.meta.env.VITE_API_BASE_URL || '/api'}/auth/refresh`,
-            { refreshToken }
-          );
-          if (res.data?.success && res.data.data) {
-            localStorage.setItem('ticketflow_access_token', res.data.data.accessToken);
-            localStorage.setItem('ticketflow_refresh_token', res.data.data.refreshToken);
-            originalRequest.headers.Authorization = `Bearer ${res.data.data.accessToken}`;
-            return api(originalRequest);
-          }
-        } catch {
-          localStorage.removeItem('ticketflow_access_token');
-          localStorage.removeItem('ticketflow_refresh_token');
-        }
+
+      if (!activeRefreshPromise) {
+        activeRefreshPromise = requestNewAccessToken().finally(() => {
+          activeRefreshPromise = null;
+        });
+      }
+
+      const newAccessToken = await activeRefreshPromise;
+      if (newAccessToken && originalRequest.headers) {
+        originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
+        return api(originalRequest);
       }
     }
     return Promise.reject(error);
@@ -406,17 +438,21 @@ export const authApi = {
       if (refreshToken) {
         await api.post('/auth/logout', { refreshToken });
       }
+    } catch {
+      // Continue cleanup even if server unreachable
     } finally {
       localStorage.removeItem('ticketflow_access_token');
       localStorage.removeItem('ticketflow_refresh_token');
+      localStorage.removeItem('ticketflow_user');
     }
   },
-  getCurrentUser: async (): Promise<User | null> => {
+  getCurrentUser: async (): Promise<{ user: User | null; isUnauthorized: boolean }> => {
     try {
       const res = await api.get<ApiResponse<User>>('/auth/me');
-      return res.data?.data || null;
-    } catch {
-      return null;
+      return { user: res.data?.data || null, isUnauthorized: false };
+    } catch (err: any) {
+      const is401 = err.response?.status === 401;
+      return { user: null, isUnauthorized: is401 };
     }
   }
 };

@@ -161,12 +161,14 @@ public class GatewayProxyController {
             return method != HttpMethod.GET; // Only mutations require auth, GET is public
         }
 
-        // Browsing seat layout can be viewed publicly
-        if (path.matches("^/api/bookings/shows/\\d+/seats$") && method == HttpMethod.GET) {
+        // Browsing seat layout, auto-allocating, and temporary Redis seat locks are public
+        if ((path.matches("^/api/bookings/shows/\\d+/seats$") && method == HttpMethod.GET) ||
+            path.startsWith("/api/bookings/lock-seats") ||
+            path.startsWith("/api/bookings/auto-allocate")) {
             return false;
         }
 
-        // All bookings, payments, and /me require authentication
+        // Final booking creation, payments, and /me require authentication
         if (path.startsWith("/api/bookings") || path.startsWith("/api/payments") || path.equals("/api/auth/me")) {
             return true;
         }

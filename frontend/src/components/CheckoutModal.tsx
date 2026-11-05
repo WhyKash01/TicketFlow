@@ -37,6 +37,11 @@ export default function CheckoutModal({ show, selectedSeats, onClose, onSuccess 
   const handlePay = async () => {
     setErrorMessage(null);
 
+    if (!isAuthenticated) {
+      dispatch(openAuthModal('login'));
+      return;
+    }
+
     try {
       // SAGA Step 1: Lock seats in Redis
       dispatch(setSagaStep('LOCKING'));
@@ -250,7 +255,7 @@ export default function CheckoutModal({ show, selectedSeats, onClose, onSuccess 
             disabled={sagaStep === 'LOCKING' || sagaStep === 'INITIATING' || sagaStep === 'PAYING'}
             className="w-full flex items-center justify-center gap-2"
           >
-            <span>Pay ₹{grandTotal}</span>
+            <span>{isAuthenticated ? `Pay ₹${grandTotal}` : `Sign In & Pay ₹${grandTotal}`}</span>
             <ArrowRight className="w-4 h-4" />
           </Button>
         </div>

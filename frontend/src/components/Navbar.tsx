@@ -3,6 +3,7 @@ import { Ticket, MapPin, Search, Film, Calendar, ShieldCheck, LogIn, LogOut, Use
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
 import { setSelectedCity } from '@/store/slices/citySlice';
 import { openAuthModal, logout } from '@/store/slices/authSlice';
+import { authApi } from '@/api/client';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 
@@ -16,6 +17,14 @@ export default function Navbar({ onNavigate, currentPage }: NavbarProps) {
   const { selectedCity, availableCities } = useAppSelector((state) => state.city);
   const { userBookings } = useAppSelector((state) => state.booking);
   const { isAuthenticated, user } = useAppSelector((state) => state.auth);
+
+  const handleSignOut = async () => {
+    try {
+      await authApi.logout();
+    } finally {
+      dispatch(logout());
+    }
+  };
 
   return (
     <header className="sticky top-0 z-50 bg-[#0b0f19]/90 backdrop-blur-md border-b border-slate-800">
@@ -98,7 +107,7 @@ export default function Navbar({ onNavigate, currentPage }: NavbarProps) {
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => dispatch(logout())}
+                  onClick={handleSignOut}
                   className="h-8 px-2 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10"
                   title="Sign Out"
                 >
