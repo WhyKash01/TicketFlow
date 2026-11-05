@@ -26,13 +26,20 @@ public class BookingController {
     @GetMapping("/shows/{showId}/seats")
     public ResponseEntity<ApiResponse<List<SeatDto>>> getShowSeats(
             @PathVariable Long showId,
+            @RequestHeader(value = "X-User-Id", required = false) String headerUserId,
             @RequestParam(required = false) String userId) {
-        List<SeatDto> seats = bookingService.getShowSeatsWithRealtimeStatus(showId, userId);
+        String effectiveUserId = headerUserId != null ? headerUserId : userId;
+        List<SeatDto> seats = bookingService.getShowSeatsWithRealtimeStatus(showId, effectiveUserId);
         return ResponseEntity.ok(ApiResponse.success(seats, "Seats retrieved successfully"));
     }
 
     @PostMapping("/lock-seats")
-    public ResponseEntity<ApiResponse<SeatLockResponse>> lockSeats(@RequestBody SeatLockRequest request) {
+    public ResponseEntity<ApiResponse<SeatLockResponse>> lockSeats(
+            @RequestHeader(value = "X-User-Id", required = false) String headerUserId,
+            @RequestBody SeatLockRequest request) {
+        if (headerUserId != null && !headerUserId.isBlank()) {
+            request.setUserId(headerUserId);
+        }
         SeatLockResponse response = redisSeatLockService.lockSeats(request);
         if (response.isLocked()) {
             return ResponseEntity.ok(ApiResponse.success(response, response.getMessage()));
@@ -44,9 +51,11 @@ public class BookingController {
     @PostMapping("/unlock-seats")
     public ResponseEntity<ApiResponse<Boolean>> unlockSeats(
             @RequestParam Long showId,
-            @RequestParam String userId,
+            @RequestHeader(value = "X-User-Id", required = false) String headerUserId,
+            @RequestParam(required = false) String userId,
             @RequestBody List<Long> seatIds) {
-        boolean released = redisSeatLockService.unlockSeats(showId, userId, seatIds);
+        String effectiveUserId = headerUserId != null ? headerUserId : userId;
+        boolean released = redisSeatLockService.unlockSeats(showId, effectiveUserId, seatIds);
         return ResponseEntity.ok(ApiResponse.success(released, "Seats unlocked successfully"));
     }
 
@@ -62,7 +71,12 @@ public class BookingController {
     }
 
     @PostMapping("/initiate")
-    public ResponseEntity<ApiResponse<BookingResponse>> initiateBooking(@RequestBody BookingRequest request) {
+    public ResponseEntity<ApiResponse<BookingResponse>> initiateBooking(
+            @RequestHeader(value = "X-User-Id", required = false) String headerUserId,
+            @RequestBody BookingRequest request) {
+        if (headerUserId != null && !headerUserId.isBlank()) {
+            request.setUserId(headerUserId);
+        }
         BookingResponse response = sagaCoordinatorService.initiateBookingSaga(request);
         return ResponseEntity.ok(ApiResponse.success(response, response.getMessage()));
     }

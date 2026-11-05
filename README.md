@@ -246,6 +246,15 @@ TicketFlow/
 
 ## 📡 REST API Reference
 
+### 🔐 Auth & User Service (`/api/auth`)
+| Method | Endpoint | Description |
+|---|---|---|
+| `POST` | `/api/auth/register` | Register new user with hashed password (BCrypt) & return token pair |
+| `POST` | `/api/auth/login` | Authenticate credentials & return Access Token (JWT) + Refresh Token |
+| `POST` | `/api/auth/refresh` | Rotate and issue a new Access Token using an unrevoked Refresh Token |
+| `POST` | `/api/auth/logout` | Revoke Refresh Token in PostgreSQL & terminate session |
+| `GET` | `/api/auth/me` | Fetch authenticated user profile details |
+
 ### 🎬 Catalog Service (`/api/catalog`)
 | Method | Endpoint | Description |
 |---|---|---|
@@ -281,4 +290,100 @@ TicketFlow/
 | `GET` | `/api/notifications/booking/{ref}` | Fetch sent email & SMS dispatch logs for a booking |
 
 ---
+
+## ⚡ Quick Start & Execution Guide
+
+### 0. Environment Configuration (Optional)
+A documented template [`.env.example`](file:///.env.example) is provided at the project root. If you need custom database credentials or ports, create a local `.env` file (which is safely ignored by Git):
+```powershell
+cp .env.example .env
+```
+*(Default values work out-of-the-box for local Docker development)*
+
+### 1. Start Infrastructure via Docker
+Ensure Docker Desktop is running, then execute:
+```cmd
+cd scripts
+.\start-infra.bat
+```
+This spins up:
+* **PostgreSQL 16** (`localhost:5432`) with isolated databases:
+  * `ticketflow_auth` (User accounts, hashed passwords, refresh tokens)
+  * `ticketflow_catalog`
+  * `ticketflow_booking`
+  * `ticketflow_payment`
+  * `ticketflow_notification`
+* **pgAdmin 4 Web GUI** at **[http://localhost:5050](http://localhost:5050)** (`admin@ticketflow.com` / `admin`)
+* **Interactive Database Shell**: Run `.\scripts\open-db-shell.bat` to query tables directly
+* **Redis 7** (`localhost:6379`) for distributed seat locking and rate limiting
+* **RabbitMQ 3.13** (`localhost:5672`, Management UI at **[http://localhost:15672](http://localhost:15672)** with `guest`/`guest`)
+
+---
+
+### 2. Run Backend Microservices
+From `c:\yash\TicketFlow\backend`, build all modules:
+```powershell
+cd backend
+mvn clean install -DskipTests
+```
+
+Start the services in separate terminal tabs:
+
+1. **Service Registry (Eureka)** *(Optional with basic gateway)*:
+   ```powershell
+   mvn spring-boot:run -pl service-registry
+   ```
+   *Dashboard available at: [http://localhost:8761](http://localhost:8761)*
+
+2. **Auth & User Service (Port 8085)**:
+   ```powershell
+   mvn spring-boot:run -pl auth-service
+   ```
+
+3. **API Gateway (Port 8080)**:
+   ```powershell
+   mvn spring-boot:run -pl api-gateway
+   ```
+   *Dashboard & Routes: [http://localhost:8080/](http://localhost:8080/)*
+   *Health endpoint: [http://localhost:8080/actuator/health](http://localhost:8080/actuator/health)*
+
+4. **Core Domain Services**:
+   ```powershell
+   mvn spring-boot:run -pl catalog-service
+   mvn spring-boot:run -pl booking-service
+   mvn spring-boot:run -pl payment-service
+   mvn spring-boot:run -pl notification-service
+   ```
+
+---
+
+### 3. Run Frontend Application
+From `c:\yash\TicketFlow\frontend`:
+```powershell
+cd frontend
+npm run dev
+```
+Open **[http://localhost:3000](http://localhost:3000)** in your browser.
+
+---
+
+## 🧪 Interactive Features to Try
+
+1. **User Authentication & Session Management**:
+   * Register or log in to receive an Access Token (15m JWT) and a persistent Refresh Token.
+   * API Gateway verifies token on protected routes and injects `X-User-Id` downstream.
+2. **City Selection**: Switch between *Mumbai*, *Delhi-NCR*, *Bengaluru*, *Hyderabad* to view local cinemas and showtimes.
+3. **Segment Tree Contiguous Seat Selector**:
+   * Open any show (e.g., *Dune: Part Two* at PVR IMAX).
+   * In the **Segment Tree Contiguous Allocation** widget, choose seat count (e.g. `3`) and preferred tier (`GOLD`).
+   * Click **Find Contiguous Seats**: The $O(\log N)$ Segment Tree algorithm will instantly locate 3 adjacent seats without gaps and highlight them on the interactive seating grid.
+4. **10-Minute Redis Lock Countdown**:
+   * Watch the real-time countdown timer tracking Redis lock TTL.
+   * Lock turns amber across users, preventing double-bookings.
+5. **Saga Rollback Testing**:
+   * In the checkout modal, check **"Test Saga Rollback (Simulate Payment Failure)"**.
+   * Click **Pay**: The payment service will simulate a decline, triggering the Saga compensating transaction to cancel the booking and release all Redis seat locks.
+6. **Digital Pass & QR Ticket**:
+   * Complete a successful checkout to trigger the celebratory confetti explosion, inspect your generated QR ticket, and download or print your admission pass.
+
 

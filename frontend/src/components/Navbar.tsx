@@ -1,7 +1,8 @@
 import React from 'react';
-import { Ticket, MapPin, Search, Film, Calendar, ShieldCheck } from 'lucide-react';
+import { Ticket, MapPin, Search, Film, Calendar, ShieldCheck, LogIn, LogOut, User as UserIcon } from 'lucide-react';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
 import { setSelectedCity } from '@/store/slices/citySlice';
+import { openAuthModal, logout } from '@/store/slices/authSlice';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 
@@ -14,6 +15,7 @@ export default function Navbar({ onNavigate, currentPage }: NavbarProps) {
   const dispatch = useAppDispatch();
   const { selectedCity, availableCities } = useAppSelector((state) => state.city);
   const { userBookings } = useAppSelector((state) => state.booking);
+  const { isAuthenticated, user } = useAppSelector((state) => state.auth);
 
   return (
     <header className="sticky top-0 z-50 bg-[#0b0f19]/90 backdrop-blur-md border-b border-slate-800">
@@ -81,6 +83,38 @@ export default function Navbar({ onNavigate, currentPage }: NavbarProps) {
                 </span>
               )}
             </Button>
+
+            {/* Auth Profile / Sign In */}
+            {isAuthenticated && user ? (
+              <div className="flex items-center gap-2 pl-1 border-l border-slate-800">
+                <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 rounded-xl px-2.5 py-1.5 shadow-sm">
+                  <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-rose-500 to-amber-500 flex items-center justify-center text-white font-bold text-[11px]">
+                    {user.fullName ? user.fullName.charAt(0).toUpperCase() : 'U'}
+                  </div>
+                  <span className="text-xs font-semibold text-slate-200 hidden sm:inline max-w-[110px] truncate">
+                    {user.fullName || user.email}
+                  </span>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => dispatch(logout())}
+                  className="h-8 px-2 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10"
+                  title="Sign Out"
+                >
+                  <LogOut className="w-4 h-4" />
+                </Button>
+              </div>
+            ) : (
+              <Button
+                size="sm"
+                onClick={() => dispatch(openAuthModal('login'))}
+                className="bg-gradient-to-r from-rose-600 to-rose-500 hover:from-rose-500 hover:to-rose-400 text-white text-xs font-semibold px-3.5 shadow-md shadow-rose-600/20"
+              >
+                <LogIn className="w-3.5 h-3.5 mr-1.5" />
+                <span>Sign In</span>
+              </Button>
+            )}
           </div>
         </div>
       </div>

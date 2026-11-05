@@ -1,11 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Navbar from './components/Navbar';
 import HomePage from './components/HomePage';
 import MovieDetailPage from './components/MovieDetailPage';
 import SeatBookingPage from './components/SeatBookingPage';
 import MyBookingsPage from './components/MyBookingsPage';
+import AuthModal from './components/AuthModal';
 import { useAppDispatch, useAppSelector } from './store/hooks';
 import { setSelectedMovie, setSelectedShow } from './store/slices/bookingSlice';
+import { updateUser, logout } from './store/slices/authSlice';
+import { authApi } from './api/client';
 import { Movie, Show } from './types/models';
 
 type PageState = 'home' | 'movie-detail' | 'seat-booking' | 'my-bookings';
@@ -14,6 +17,23 @@ export default function App() {
   const dispatch = useAppDispatch();
   const { selectedMovie, selectedShow } = useAppSelector((state) => state.booking);
   const [currentPage, setCurrentPage] = useState<PageState>('home');
+
+  useEffect(() => {
+    const token = localStorage.getItem('ticketflow_access_token');
+    if (token) {
+      authApi.getCurrentUser()
+        .then((user) => {
+          if (user) {
+            dispatch(updateUser(user));
+          } else {
+            dispatch(logout());
+          }
+        })
+        .catch(() => {
+          // Leave stored session or offline fallback
+        });
+    }
+  }, [dispatch]);
 
   const handleSelectMovie = (movie: Movie) => {
     dispatch(setSelectedMovie(movie));
@@ -81,6 +101,9 @@ export default function App() {
           </p>
         </div>
       </footer>
+
+      {/* Global Auth Modal */}
+      <AuthModal />
 
     </div>
   );

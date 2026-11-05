@@ -8,12 +8,55 @@ import {
   ApiResponse,
   SeatLockResponse,
   ContiguousSeatResponse,
+  User,
+  AuthResponse,
+  RegisterRequest,
+  LoginRequest,
 } from '@/types/models';
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
   timeout: 5000,
 });
+
+// Automatic JWT Token Attachment
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('ticketflow_access_token');
+  if (token && config.headers) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+// Automatic Refresh Token Handling on 401 Unauthorized
+api.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const originalRequest = error.config;
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      originalRequest._retry = true;
+      const refreshToken = localStorage.getItem('ticketflow_refresh_token');
+      if (refreshToken) {
+        try {
+          const res = await axios.post<ApiResponse<AuthResponse>>(
+            `${import.meta.env.VITE_API_BASE_URL || '/api'}/auth/refresh`,
+            { refreshToken }
+          );
+          if (res.data?.success && res.data.data) {
+            localStorage.setItem('ticketflow_access_token', res.data.data.accessToken);
+            localStorage.setItem('ticketflow_refresh_token', res.data.data.refreshToken);
+            originalRequest.headers.Authorization = `Bearer ${res.data.data.accessToken}`;
+            return api(originalRequest);
+          }
+        } catch {
+          localStorage.removeItem('ticketflow_access_token');
+          localStorage.removeItem('ticketflow_refresh_token');
+        }
+      }
+    }
+    return Promise.reject(error);
+  }
+);
 
 // Fallback mock dataset for local UI preview
 const MOCK_MOVIES: Movie[] = [
@@ -336,6 +379,44 @@ export const paymentApi = {
           status: 'SUCCESS'
         }
       };
+    }
+  }
+};
+
+export const authApi = {
+  register: async (data: RegisterRequest): Promise<ApiResponse<AuthResponse>> => {
+    const res = await api.post<ApiResponse<AuthResponse>>('/auth/register', data);
+    if (res.data?.success && res.data.data) {
+      localStorage.setItem('ticketflow_access_token', res.data.data.accessToken);
+      localStorage.setItem('ticketflow_refresh_token', res.data.data.refreshToken);
+    }
+    return res.data;
+  },
+  login: async (data: LoginRequest): Promise<ApiResponse<AuthResponse>> => {
+    const res = await api.post<ApiResponse<AuthResponse>>('/auth/login', data);
+    if (res.data?.success && res.data.data) {
+      localStorage.setItem('ticketflow_access_token', res.data.data.accessToken);
+      localStorage.setItem('ticketflow_refresh_token', res.data.data.refreshToken);
+    }
+    return res.data;
+  },
+  logout: async (): Promise<void> => {
+    const refreshToken = localStorage.getItem('ticketflow_refresh_token');
+    try {
+      if (refreshToken) {
+        await api.post('/auth/logout', { refreshToken });
+      }
+    } finally {
+      localStorage.removeItem('ticketflow_access_token');
+      localStorage.removeItem('ticketflow_refresh_token');
+    }
+  },
+  getCurrentUser: async (): Promise<User | null> => {
+    try {
+      const res = await api.get<ApiResponse<User>>('/auth/me');
+      return res.data?.data || null;
+    } catch {
+      return null;
     }
   }
 };

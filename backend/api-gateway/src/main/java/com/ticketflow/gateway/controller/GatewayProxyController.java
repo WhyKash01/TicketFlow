@@ -1,5 +1,7 @@
 package com.ticketflow.gateway.controller;
 
+import com.ticketflow.gateway.security.JwtValidator;
+import io.jsonwebtoken.Claims;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,6 +21,10 @@ public class GatewayProxyController {
 
     private static final Logger log = LoggerFactory.getLogger(GatewayProxyController.class);
     private final RestTemplate restTemplate;
+    private final JwtValidator jwtValidator;
+
+    @Value("${services.auth:http://localhost:8085}")
+    private String authUrl;
 
     @Value("${services.catalog:http://localhost:8081}")
     private String catalogUrl;
@@ -32,8 +38,9 @@ public class GatewayProxyController {
     @Value("${services.notification:http://localhost:8084}")
     private String notificationUrl;
 
-    public GatewayProxyController(RestTemplate restTemplate) {
+    public GatewayProxyController(RestTemplate restTemplate, JwtValidator jwtValidator) {
         this.restTemplate = restTemplate;
+        this.jwtValidator = jwtValidator;
     }
 
     @RequestMapping(value = "/**")
@@ -42,10 +49,15 @@ public class GatewayProxyController {
             HttpMethod method,
             HttpServletRequest request) {
 
+        // Complete CORS preflight requests directly at gateway
+        if (HttpMethod.OPTIONS.equals(method)) {
+            return ResponseEntity.ok().build();
+        }
+
         String requestUri = request.getRequestURI(); // e.g. /api/catalog/movies
         String queryString = request.getQueryString();
 
-        // Determine destination service base URL
+        // 1. Resolve destination microservice URL
         String targetBaseUrl = resolveTargetServiceUrl(requestUri);
         if (targetBaseUrl == null) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
@@ -55,20 +67,55 @@ public class GatewayProxyController {
                     ));
         }
 
+        // 2. Authentication Check for Protected Endpoints
+        String authHeader = request.getHeader(HttpHeaders.AUTHORIZATION);
+        Optional<Claims> claimsOpt = Optional.empty();
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            String token = authHeader.substring(7);
+            claimsOpt = jwtValidator.validateAndExtractClaims(token);
+        }
+
+        boolean requiresAuth = isProtectedRoute(requestUri, method);
+        if (requiresAuth && claimsOpt.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(Map.of(
+                            "success", false,
+                            "status", 401,
+                            "error", "Unauthorized",
+                            "message", "Authentication required. Please provide a valid Bearer token.",
+                            "path", requestUri
+                    ));
+        }
+
         String targetUrl = targetBaseUrl + requestUri;
         if (queryString != null && !queryString.isBlank()) {
             targetUrl += "?" + queryString;
         }
 
-        // Copy incoming headers
+        // 3. Copy headers and inject trusted user claims
         HttpHeaders headers = new HttpHeaders();
         Enumeration<String> headerNames = request.getHeaderNames();
         while (headerNames != null && headerNames.hasMoreElements()) {
             String headerName = headerNames.nextElement();
-            if (!headerName.equalsIgnoreCase("host") && !headerName.equalsIgnoreCase("content-length")) {
+            if (!headerName.equalsIgnoreCase("host") && 
+                !headerName.equalsIgnoreCase("content-length") &&
+                !headerName.equalsIgnoreCase("transfer-encoding") &&
+                !headerName.equalsIgnoreCase("connection")) {
                 headers.put(headerName, Collections.list(request.getHeaders(headerName)));
             }
         }
+
+        // Inject claims downstream if authenticated
+        claimsOpt.ifPresent(claims -> {
+            headers.set("X-User-Id", claims.getSubject());
+            if (claims.get("role") != null) {
+                headers.set("X-User-Role", claims.get("role", String.class));
+            }
+            if (claims.get("email") != null) {
+                headers.set("X-User-Email", claims.get("email", String.class));
+            }
+        });
 
         HttpEntity<byte[]> entity = new HttpEntity<>(body, headers);
 
@@ -79,7 +126,7 @@ public class GatewayProxyController {
             log.warn("Downstream service returned {}: {}", ex.getStatusCode(), ex.getResponseBodyAsString());
             return ResponseEntity.status(ex.getStatusCode())
                     .contentType(MediaType.APPLICATION_JSON)
-                    .body(ex.getResponseBodyAsString());
+                    .body(ex.getResponseBodyAsByteArray());
         } catch (ResourceAccessException ex) {
             log.warn("Downstream service unreachable at {}: {}", targetUrl, ex.getMessage());
             return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
@@ -100,8 +147,37 @@ public class GatewayProxyController {
         }
     }
 
-    private String resolveTargetServiceUrl(String path) {
+    private boolean isProtectedRoute(String path, HttpMethod method) {
+        // Public Auth routes
+        if (path.startsWith("/api/auth/register") ||
+            path.startsWith("/api/auth/login") ||
+            path.startsWith("/api/auth/refresh") ||
+            path.startsWith("/api/auth/logout")) {
+            return false;
+        }
+
+        // Public Catalog routes (Browsing movies, shows, theatres)
         if (path.startsWith("/api/catalog")) {
+            return method != HttpMethod.GET; // Only mutations require auth, GET is public
+        }
+
+        // Browsing seat layout can be viewed publicly
+        if (path.matches("^/api/bookings/shows/\\d+/seats$") && method == HttpMethod.GET) {
+            return false;
+        }
+
+        // All bookings, payments, and /me require authentication
+        if (path.startsWith("/api/bookings") || path.startsWith("/api/payments") || path.equals("/api/auth/me")) {
+            return true;
+        }
+
+        return false;
+    }
+
+    private String resolveTargetServiceUrl(String path) {
+        if (path.startsWith("/api/auth")) {
+            return authUrl;
+        } else if (path.startsWith("/api/catalog")) {
             return catalogUrl;
         } else if (path.startsWith("/api/bookings")) {
             return bookingUrl;

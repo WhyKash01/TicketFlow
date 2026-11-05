@@ -7,10 +7,15 @@ spring:
 
 # Configurable backend microservice target URLs
 services:
+  auth: ${AUTH_SERVICE_URL:http://localhost:8085}
   catalog: ${CATALOG_SERVICE_URL:http://localhost:8081}
   booking: ${BOOKING_SERVICE_URL:http://localhost:8082}
   payment: ${PAYMENT_SERVICE_URL:http://localhost:8083}
   notification: ${NOTIFICATION_SERVICE_URL:http://localhost:8084}
+
+ticketflow:
+  jwt:
+    secret: ${JWT_SECRET:404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970}
 
 management:
   endpoints:

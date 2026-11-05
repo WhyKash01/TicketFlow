@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { X, CreditCard, ArrowRight, RotateCcw } from 'lucide-react';
+import { X, CreditCard, ArrowRight, RotateCcw, LogIn, CheckCircle2 } from 'lucide-react';
 import { bookingApi, paymentApi } from '@/api/client';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
 import { addConfirmedBooking, setSagaStep } from '@/store/slices/bookingSlice';
+import { openAuthModal } from '@/store/slices/authSlice';
 import { Show, Seat, Booking } from '@/types/models';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -18,9 +19,15 @@ interface CheckoutModalProps {
 export default function CheckoutModal({ show, selectedSeats, onClose, onSuccess }: CheckoutModalProps) {
   const dispatch = useAppDispatch();
   const { currentUser, sagaStep } = useAppSelector((state) => state.booking);
+  const { user, isAuthenticated } = useAppSelector((state) => state.auth);
   const [paymentMethod, setPaymentMethod] = useState<'UPI' | 'CARD' | 'NETBANKING'>('UPI');
   const [simulateFailure, setSimulateFailure] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const effectiveUserId = user ? String(user.id) : currentUser.id;
+  const effectiveUserEmail = user ? user.email : currentUser.email;
+  const effectiveUserName = user ? user.fullName : currentUser.name;
+  const effectiveUserPhone = user?.phoneNumber || currentUser.phone;
 
   const basePrice = selectedSeats.reduce((sum, s) => sum + Number(s.price), 0);
   const convenienceFee = selectedSeats.length * 35.40;
@@ -33,7 +40,7 @@ export default function CheckoutModal({ show, selectedSeats, onClose, onSuccess 
     try {
       // SAGA Step 1: Lock seats in Redis
       dispatch(setSagaStep('LOCKING'));
-      const lockRes = await bookingApi.lockSeats(show.id, currentUser.id, selectedSeats.map(s => s.id));
+      const lockRes = await bookingApi.lockSeats(show.id, effectiveUserId, selectedSeats.map(s => s.id));
       if (!lockRes.data || !lockRes.data.locked) {
         throw new Error(lockRes.message || "Failed to acquire distributed Redis seat lock.");
       }
@@ -41,9 +48,9 @@ export default function CheckoutModal({ show, selectedSeats, onClose, onSuccess 
       // SAGA Step 2: Initiate Booking
       dispatch(setSagaStep('INITIATING'));
       const bookingRes = await bookingApi.initiateBooking({
-        userId: currentUser.id,
-        userEmail: currentUser.email,
-        userPhone: currentUser.phone,
+        userId: effectiveUserId,
+        userEmail: effectiveUserEmail,
+        userPhone: effectiveUserPhone,
         showId: show.id,
         movieTitle: show.movieTitle || "Dune: Part Two",
         theatreName: show.theatreName,
@@ -114,6 +121,27 @@ export default function CheckoutModal({ show, selectedSeats, onClose, onSuccess 
 
         {/* Content */}
         <div className="p-6 space-y-5">
+          {/* User Account Status */}
+          {isAuthenticated && user ? (
+            <div className="bg-emerald-950/20 border border-emerald-800/40 rounded-xl px-3.5 py-2 flex items-center justify-between text-xs">
+              <div className="flex items-center gap-2 text-emerald-300">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span>Booking as <strong className="text-white">{effectiveUserName}</strong> ({effectiveUserEmail})</span>
+              </div>
+            </div>
+          ) : (
+            <div className="bg-rose-950/20 border border-rose-800/40 rounded-xl px-3.5 py-2 flex items-center justify-between text-xs">
+              <span className="text-slate-300">Have an account? Sign in to save digital tickets.</span>
+              <button
+                type="button"
+                onClick={() => dispatch(openAuthModal('login'))}
+                className="text-rose-400 hover:text-rose-300 font-semibold underline underline-offset-2 flex items-center gap-1"
+              >
+                <LogIn className="w-3.5 h-3.5" /> Sign In
+              </button>
+            </div>
+          )}
+
           {/* Movie & Show Info */}
           <div className="bg-slate-950/60 border border-slate-800/80 rounded-xl p-3.5">
             <h4 className="text-sm font-semibold text-rose-400">{show.movieTitle || "Dune: Part Two"}</h4>

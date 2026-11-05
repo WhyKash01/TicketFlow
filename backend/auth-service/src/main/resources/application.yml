@@ -1,0 +1,31 @@
+server:
+  port: 8085
+
+spring:
+  application:
+    name: auth-service
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/ticketflow_auth}
+    username: ${SPRING_DATASOURCE_USERNAME:ticketflow_user}
+    password: ${SPRING_DATASOURCE_PASSWORD:ticketflow_pass}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+
+ticketflow:
+  jwt:
+    # 256-bit HMAC secret key for signing JWTs
+    secret: ${JWT_SECRET:404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970}
+    # 15 minutes (in milliseconds)
+    access-token-expiration-ms: 900000
+    # 7 days (in milliseconds)
+    refresh-token-expiration-ms: 604800000
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+

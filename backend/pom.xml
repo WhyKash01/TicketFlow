@@ -20,6 +20,7 @@
 
     <modules>
         <module>shared-dto</module>
+        <module>auth-service</module>
         <module>service-registry</module>
         <module>api-gateway</module>
         <module>catalog-service</module>
@@ -33,6 +34,7 @@
         <spring-cloud.version>2023.0.1</spring-cloud.version>
         <lombok.version>1.18.30</lombok.version>
         <redisson.version>3.28.2</redisson.version>
+        <jjwt.version>0.12.5</jjwt.version>
     </properties>
 
     <dependencyManagement>

@@ -126,3 +126,35 @@ export interface ContiguousSeatResponse {
   message?: string;
 }
 
+export interface User {
+  id: number;
+  email: string;
+  fullName: string;
+  phoneNumber?: string;
+  role: 'ROLE_CUSTOMER' | 'ROLE_ADMIN';
+  createdAt?: string;
+}
+
+export interface AuthResponse {
+  accessToken: string;
+  refreshToken: string;
+  tokenType: string;
+  expiresInSeconds: number;
+  userId: number;
+  email: string;
+  fullName: string;
+  role: 'ROLE_CUSTOMER' | 'ROLE_ADMIN';
+}
+
+export interface RegisterRequest {
+  fullName: string;
+  email: string;
+  password: string;
+  phoneNumber?: string;
+}
+
+export interface LoginRequest {
+  email: string;
+  password: string;
+}
+
