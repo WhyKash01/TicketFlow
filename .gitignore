@@ -38,3 +38,8 @@ docker/redisdata/
 docker/rabbitdata/
 docker/pgadmin/
 
+# Project Internal Notes & Documentation
+project detail/
+project-detail/
+
+

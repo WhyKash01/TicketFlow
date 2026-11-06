@@ -14,10 +14,13 @@ import java.util.List;
 @AllArgsConstructor
 public class BookingCancelledEvent {
     private String bookingId;
+    private String bookingReference;
+    private String userId;
+    private String userEmail;
+    private String userPhone;
     private Long showId;
     private List<Long> seatIds;
     private String reason;
     @Builder.Default
     private LocalDateTime timestamp = LocalDateTime.now();
 }
-

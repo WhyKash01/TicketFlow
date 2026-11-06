@@ -38,6 +38,12 @@ public class GatewayProxyController {
     @Value("${services.notification:http://localhost:8084}")
     private String notificationUrl;
 
+    public enum AccessRequirement {
+        PUBLIC,
+        USER,
+        ADMIN_ONLY
+    }
+
     public GatewayProxyController(RestTemplate restTemplate, JwtValidator jwtValidator) {
         this.restTemplate = restTemplate;
         this.jwtValidator = jwtValidator;
@@ -49,7 +55,7 @@ public class GatewayProxyController {
             HttpMethod method,
             HttpServletRequest request) {
 
-        // Complete CORS preflight requests directly at gateway
+        // Complete CORS preflight requests directly at the gateway
         if (HttpMethod.OPTIONS.equals(method)) {
             return ResponseEntity.ok().build();
         }
@@ -61,13 +67,17 @@ public class GatewayProxyController {
         String targetBaseUrl = resolveTargetServiceUrl(requestUri);
         if (targetBaseUrl == null) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .contentType(MediaType.APPLICATION_JSON)
                     .body(Map.of(
                             "success", false,
-                            "message", "No service route configured for path: " + requestUri
+                            "status", 404,
+                            "error", "Not Found",
+                            "message", "No downstream microservice configured for path: " + requestUri,
+                            "path", requestUri
                     ));
         }
 
-        // 2. Authentication Check for Protected Endpoints
+        // 2. Validate JWT if provided
         String authHeader = request.getHeader(HttpHeaders.AUTHORIZATION);
         Optional<Claims> claimsOpt = Optional.empty();
         if (authHeader != null && authHeader.startsWith("Bearer ")) {
@@ -75,8 +85,10 @@ public class GatewayProxyController {
             claimsOpt = jwtValidator.validateAndExtractClaims(token);
         }
 
-        boolean requiresAuth = isProtectedRoute(requestUri, method);
-        if (requiresAuth && claimsOpt.isEmpty()) {
+        // 3. Evaluate Access Requirement (Public, Authenticated User, or Admin Only)
+        AccessRequirement requirement = determineAccessRequirement(requestUri, method);
+
+        if (requirement == AccessRequirement.USER && claimsOpt.isEmpty()) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(Map.of(
@@ -88,25 +100,58 @@ public class GatewayProxyController {
                     ));
         }
 
-        String targetUrl = targetBaseUrl + requestUri;
-        if (queryString != null && !queryString.isBlank()) {
-            targetUrl += "?" + queryString;
+        if (requirement == AccessRequirement.ADMIN_ONLY) {
+            if (claimsOpt.isEmpty()) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body(Map.of(
+                                "success", false,
+                                "status", 401,
+                                "error", "Unauthorized",
+                                "message", "Admin authentication required.",
+                                "path", requestUri
+                        ));
+            }
+
+            Claims claims = claimsOpt.get();
+            String role = claims.get("role", String.class);
+            if (role == null || (!role.equalsIgnoreCase("ROLE_ADMIN") && !role.equalsIgnoreCase("ADMIN"))) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body(Map.of(
+                                "success", false,
+                                "status", 403,
+                                "error", "Forbidden",
+                                "message", "Access denied: This endpoint requires ROLE_ADMIN privileges.",
+                                "path", requestUri
+                        ));
+            }
         }
 
-        // 3. Copy headers and inject trusted user claims
+        // 4. Copy HTTP headers and SANITIZE incoming headers to prevent header spoofing
         HttpHeaders headers = new HttpHeaders();
         Enumeration<String> headerNames = request.getHeaderNames();
         while (headerNames != null && headerNames.hasMoreElements()) {
             String headerName = headerNames.nextElement();
-            if (!headerName.equalsIgnoreCase("host") && 
-                !headerName.equalsIgnoreCase("content-length") &&
-                !headerName.equalsIgnoreCase("transfer-encoding") &&
-                !headerName.equalsIgnoreCase("connection")) {
-                headers.put(headerName, Collections.list(request.getHeaders(headerName)));
+            String lower = headerName.toLowerCase();
+
+            // Hop-by-hop headers to strip
+            if (lower.equals("host") ||
+                lower.equals("content-length") ||
+                lower.equals("transfer-encoding") ||
+                lower.equals("connection")) {
+                continue;
             }
+
+            // ANTI-SPOOFING: Strip any client-supplied identity headers
+            if (lower.startsWith("x-user-") || lower.startsWith("x-auth-") || lower.startsWith("x-internal-")) {
+                continue;
+            }
+
+            headers.put(headerName, Collections.list(request.getHeaders(headerName)));
         }
 
-        // Inject claims downstream if authenticated
+        // 5. Inject trusted, verified identity headers if authenticated
         claimsOpt.ifPresent(claims -> {
             headers.set("X-User-Id", claims.getSubject());
             if (claims.get("role") != null) {
@@ -117,63 +162,87 @@ public class GatewayProxyController {
             }
         });
 
+        String targetUrl = targetBaseUrl + requestUri;
+        if (queryString != null && !queryString.isBlank()) {
+            targetUrl += "?" + queryString;
+        }
+
         HttpEntity<byte[]> entity = new HttpEntity<>(body, headers);
 
+        // 6. Forward request downstream
         try {
-            log.info("Gateway forwarding [{}] {} -> {}", method, requestUri, targetUrl);
+            log.info("Gateway proxying [{}] {} -> {}", method, requestUri, targetUrl);
             return restTemplate.exchange(URI.create(targetUrl), method, entity, byte[].class);
         } catch (HttpStatusCodeException ex) {
-            log.warn("Downstream service returned {}: {}", ex.getStatusCode(), ex.getResponseBodyAsString());
+            log.warn("Downstream service responded with {}: {}", ex.getStatusCode(), ex.getResponseBodyAsString());
             return ResponseEntity.status(ex.getStatusCode())
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(ex.getResponseBodyAsByteArray());
         } catch (ResourceAccessException ex) {
             log.warn("Downstream service unreachable at {}: {}", targetUrl, ex.getMessage());
             return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .contentType(MediaType.APPLICATION_JSON)
                     .body(Map.of(
                             "success", false,
                             "status", 503,
                             "error", "Service Unavailable",
-                            "message", "The target microservice is currently offline at " + targetBaseUrl + ". Please start the service to handle requests.",
+                            "message", "Target microservice is offline at " + targetBaseUrl + ". Please ensure service is running.",
                             "path", requestUri
                     ));
         } catch (Exception ex) {
-            log.error("Gateway error: {}", ex.getMessage(), ex);
+            log.error("Gateway error proxying request to {}: {}", targetUrl, ex.getMessage(), ex);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .contentType(MediaType.APPLICATION_JSON)
                     .body(Map.of(
                             "success", false,
-                            "message", "Gateway error: " + ex.getMessage()
+                            "status", 500,
+                            "error", "Internal Gateway Error",
+                            "message", "Gateway error: " + ex.getMessage(),
+                            "path", requestUri
                     ));
         }
     }
 
-    private boolean isProtectedRoute(String path, HttpMethod method) {
+    /**
+     * Role-Based Access Control (RBAC) security policy evaluator.
+     */
+    public AccessRequirement determineAccessRequirement(String path, HttpMethod method) {
         // Public Auth routes
         if (path.startsWith("/api/auth/register") ||
             path.startsWith("/api/auth/login") ||
             path.startsWith("/api/auth/refresh") ||
             path.startsWith("/api/auth/logout")) {
-            return false;
+            return AccessRequirement.PUBLIC;
         }
 
-        // Public Catalog routes (Browsing movies, shows, theatres)
+        // Public Catalog read routes (Browsing movies, shows, theatres, screen seats layout)
         if (path.startsWith("/api/catalog")) {
-            return method != HttpMethod.GET; // Only mutations require auth, GET is public
+            if (HttpMethod.GET.equals(method)) {
+                return AccessRequirement.PUBLIC;
+            } else {
+                // Mutations (POST, PUT, DELETE) on catalog require ROLE_ADMIN
+                return AccessRequirement.ADMIN_ONLY;
+            }
         }
 
-        // Browsing seat layout, auto-allocating, and temporary Redis seat locks are public
-        if ((path.matches("^/api/bookings/shows/\\d+/seats$") && method == HttpMethod.GET) ||
-            path.startsWith("/api/bookings/lock-seats") ||
+        // Public Booking read & calculation routes
+        if ((path.matches("^/api/bookings/shows/\\d+/seats$") && HttpMethod.GET.equals(method)) ||
             path.startsWith("/api/bookings/auto-allocate")) {
-            return false;
+            return AccessRequirement.PUBLIC;
         }
 
-        // Final booking creation, payments, and /me require authentication
-        if (path.startsWith("/api/bookings") || path.startsWith("/api/payments") || path.equals("/api/auth/me")) {
-            return true;
+        // Admin Booking verification route (QR gate scanner)
+        if (path.startsWith("/api/bookings/verify-ticket")) {
+            return AccessRequirement.ADMIN_ONLY;
         }
 
-        return false;
+        // Admin Payment routes (Compensating refund triggers & refund inspection)
+        if (path.startsWith("/api/payments/refund") || path.matches("^/api/payments/.+/refunds$")) {
+            return AccessRequirement.ADMIN_ONLY;
+        }
+
+        // All other booking, payment, notification, and /me operations require an authenticated USER
+        return AccessRequirement.USER;
     }
 
     private String resolveTargetServiceUrl(String path) {

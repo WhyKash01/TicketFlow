@@ -1,5 +1,6 @@
 package com.ticketflow.payment.model;
 
+import com.ticketflow.common.enums.PaymentProvider;
 import com.ticketflow.common.enums.PaymentStatus;
 import jakarta.persistence.*;
 import lombok.*;
@@ -18,6 +19,7 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 @Builder
 public class PaymentTransaction {
+
     @Id
     @Column(length = 36)
     private String transactionId;
@@ -39,12 +41,27 @@ public class PaymentTransaction {
     @Column(nullable = false)
     private PaymentStatus status;
 
+    @Enumerated(EnumType.STRING)
+    @Column(length = 32)
+    @Builder.Default
+    private PaymentProvider provider = PaymentProvider.MOCK;
+
     private String gatewayReference;
 
     @Column(unique = true)
     private String idempotencyKey;
 
     private String failureReason;
+
+    private String refundReference;
+
+    @Builder.Default
+    private BigDecimal refundedAmount = BigDecimal.ZERO;
+
+    private String refundReason;
+
+    @Version
+    private Long version;
 
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
@@ -53,6 +70,8 @@ public class PaymentTransaction {
     public void prePersist() {
         if (createdAt == null) createdAt = LocalDateTime.now();
         if (updatedAt == null) updatedAt = LocalDateTime.now();
+        if (refundedAmount == null) refundedAmount = BigDecimal.ZERO;
+        if (provider == null) provider = PaymentProvider.MOCK;
     }
 
     @PreUpdate
@@ -60,4 +79,3 @@ public class PaymentTransaction {
         updatedAt = LocalDateTime.now();
     }
 }
-

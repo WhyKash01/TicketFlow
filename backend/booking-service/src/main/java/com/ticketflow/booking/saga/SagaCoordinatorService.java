@@ -2,6 +2,7 @@ package com.ticketflow.booking.saga;
 
 import com.ticketflow.booking.messaging.BookingEventPublisher;
 import com.ticketflow.booking.model.Booking;
+import com.ticketflow.booking.model.BookingItem;
 import com.ticketflow.booking.model.Seat;
 import com.ticketflow.booking.redis.RedisSeatLockService;
 import com.ticketflow.booking.repository.BookingRepository;
@@ -18,6 +19,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -43,6 +46,15 @@ public class SagaCoordinatorService {
         List<Seat> seats = seatRepository.findAllById(request.getSeatIds());
         List<String> seatNumbers = seats.stream().map(Seat::getSeatNumber).collect(Collectors.toList());
 
+        BigDecimal basePrice = seats.stream()
+                .map(Seat::getPrice)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal convenienceFee = new BigDecimal(seats.size()).multiply(new BigDecimal("35.40")).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal taxes = convenienceFee.multiply(new BigDecimal("0.18")).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal grandTotal = (request.getTotalAmount() != null)
+                ? request.getTotalAmount()
+                : basePrice.add(convenienceFee).add(taxes);
+
         Booking booking = Booking.builder()
                 .bookingId(bookingId)
                 .bookingReference(bookingRef)
@@ -56,10 +68,26 @@ public class SagaCoordinatorService {
                 .showTime(request.getShowTime())
                 .seatIds(request.getSeatIds())
                 .seatNumbers(seatNumbers)
-                .totalAmount(request.getTotalAmount())
+                .basePrice(basePrice)
+                .convenienceFee(convenienceFee)
+                .taxes(taxes)
+                .totalAmount(grandTotal)
                 .status(BookingStatus.PAYMENT_PENDING)
-                .createdAt(LocalDateTime.now())
+                .expiresAt(LocalDateTime.now().plusMinutes(10))
                 .build();
+
+        for (Seat seat : seats) {
+            BookingItem item = BookingItem.builder()
+                    .booking(booking)
+                    .showSeatId(seat.getId())
+                    .seatNumber(seat.getSeatNumber())
+                    .rowName(seat.getRowName())
+                    .colIndex(seat.getColIndex())
+                    .tier(seat.getTier())
+                    .price(seat.getPrice())
+                    .build();
+            booking.addItem(item);
+        }
 
         Booking saved = bookingRepository.save(booking);
 
@@ -90,7 +118,7 @@ public class SagaCoordinatorService {
             return mapToResponse(booking, "Booking already confirmed.");
         }
 
-        // 1. Mark seats as BOOKED in database
+        // 1. Mark seats as BOOKED in database with optimistic locking check
         List<Seat> seats = seatRepository.findAllById(booking.getSeatIds());
         for (Seat seat : seats) {
             seat.setStatus(SeatStatus.BOOKED);
@@ -150,6 +178,10 @@ public class SagaCoordinatorService {
         // Publish cancellation event
         eventPublisher.publishBookingCancelled(BookingCancelledEvent.builder()
                 .bookingId(bookingId)
+                .bookingReference(booking.getBookingReference())
+                .userId(booking.getUserId())
+                .userEmail(booking.getUserEmail())
+                .userPhone(booking.getUserPhone())
                 .showId(booking.getShowId())
                 .seatIds(booking.getSeatIds())
                 .reason(reason)
@@ -177,4 +209,3 @@ public class SagaCoordinatorService {
                 .build();
     }
 }
-

@@ -21,7 +21,20 @@ public class NotificationController {
     public ResponseEntity<ApiResponse<List<NotificationLog>>> getBookingNotifications(
             @PathVariable String bookingReference) {
         List<NotificationLog> logs = notificationService.getNotificationsForBooking(bookingReference);
-        return ResponseEntity.ok(ApiResponse.success(logs, "Notification history fetched"));
+        return ResponseEntity.ok(ApiResponse.success(logs, "Notification history fetched for booking reference"));
+    }
+
+    @GetMapping("/user/{userId}")
+    public ResponseEntity<ApiResponse<List<NotificationLog>>> getUserNotifications(
+            @PathVariable String userId) {
+        List<NotificationLog> logs = notificationService.getNotificationsForUser(userId);
+        return ResponseEntity.ok(ApiResponse.success(logs, "Notification history fetched for user"));
+    }
+
+    @GetMapping("/recipient/{recipient}")
+    public ResponseEntity<ApiResponse<List<NotificationLog>>> getRecipientNotifications(
+            @PathVariable String recipient) {
+        List<NotificationLog> logs = notificationService.getNotificationsForRecipient(recipient);
+        return ResponseEntity.ok(ApiResponse.success(logs, "Notification history fetched for recipient"));
     }
 }
-

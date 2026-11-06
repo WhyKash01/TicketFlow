@@ -11,6 +11,7 @@ import com.ticketflow.common.enums.SeatTier;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.*;
@@ -26,7 +27,8 @@ public class BookingService {
     private final RedisSeatLockService redisSeatLockService;
 
     /**
-     * Retrieves all seats for a show with real-time status (merging DB state with Redis live locks).
+     * Retrieves all seats for a show with real-time status (merging DB state with
+     * Redis live locks).
      */
     public List<SeatDto> getShowSeatsWithRealtimeStatus(Long showId, String currentUserId) {
         List<Seat> seats = seatRepository.findByShowIdOrderByRowNameAscColIndexAsc(showId);
@@ -37,11 +39,16 @@ public class BookingService {
         return seats.stream().map(seat -> {
             SeatStatus effectiveStatus = seat.getStatus();
             String lockedBy = null;
+            Long lockExpiresAtEpochMs = null;
 
             if (effectiveStatus == SeatStatus.AVAILABLE) {
                 if (redisSeatLockService.isSeatLocked(showId, seat.getId())) {
                     effectiveStatus = SeatStatus.LOCKED;
                     lockedBy = redisSeatLockService.getSeatLockOwner(showId, seat.getId());
+                    Long ttlSeconds = redisSeatLockService.getSeatLockTtlSeconds(showId, seat.getId());
+                    if (ttlSeconds != null && ttlSeconds > 0) {
+                        lockExpiresAtEpochMs = System.currentTimeMillis() + (ttlSeconds * 1000);
+                    }
                 }
             }
 
@@ -55,6 +62,7 @@ public class BookingService {
                     .price(seat.getPrice())
                     .status(effectiveStatus)
                     .lockedByUserId(lockedBy)
+                    .lockExpiresAtEpochMs(lockExpiresAtEpochMs)
                     .build();
         }).collect(Collectors.toList());
     }
@@ -74,6 +82,7 @@ public class BookingService {
     /**
      * Seeds realistic cinema hall seat layout (Rows A to H, 12 seats each, tiered pricing).
      */
+    @Transactional
     public List<Seat> initializeDefaultShowSeats(Long showId) {
         log.info("Initializing seat layout for show: {}", showId);
         List<Seat> list = new ArrayList<>();
@@ -83,15 +92,16 @@ public class BookingService {
             SeatTier tier;
             BigDecimal price;
 
+            // Tier mapping: A-B = SILVER, C-F = GOLD, G-H = PLATINUM
             if (r.equals("A") || r.equals("B")) {
-                tier = SeatTier.PLATINUM;
-                price = new BigDecimal("450.00");
-            } else if (r.equals("C") || r.equals("D") || r.equals("E")) {
-                tier = SeatTier.GOLD;
-                price = new BigDecimal("320.00");
-            } else {
                 tier = SeatTier.SILVER;
                 price = new BigDecimal("220.00");
+            } else if (r.equals("C") || r.equals("D") || r.equals("E") || r.equals("F")) {
+                tier = SeatTier.GOLD;
+                price = new BigDecimal("350.00");
+            } else {
+                tier = SeatTier.PLATINUM;
+                price = new BigDecimal("490.00");
             }
 
             for (int c = 1; c <= 12; c++) {
@@ -106,8 +116,6 @@ public class BookingService {
                         .build());
             }
         }
-
         return seatRepository.saveAll(list);
     }
 }
-

@@ -22,6 +22,14 @@ spring:
     username: ${SPRING_RABBITMQ_USERNAME:guest}
     password: ${SPRING_RABBITMQ_PASSWORD:guest}
 
+ticketflow:
+  rabbitmq:
+    exchange: ticketflow.topic.exchange
+    booking-confirmed-queue: notification.booking.confirmed.queue
+    booking-cancelled-queue: notification.booking.cancelled.queue
+    payment-refunded-queue: notification.payment.refunded.queue
+    legacy-notification-queue: ticketflow.notification.queue
+
 eureka:
   client:
     service-url:
@@ -34,4 +42,3 @@ management:
     web:
       exposure:
         include: health,info
-

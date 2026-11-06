@@ -1,6 +1,7 @@
 package com.ticketflow.catalog.controller;
 
 import com.ticketflow.catalog.model.Show;
+import com.ticketflow.catalog.model.ShowPriceTier;
 import com.ticketflow.catalog.service.CatalogService;
 import com.ticketflow.common.dto.ApiResponse;
 import lombok.RequiredArgsConstructor;
@@ -35,6 +36,12 @@ public class ShowController {
         return catalogService.getShowById(id)
                 .map(show -> ResponseEntity.ok(ApiResponse.success(show, "Show found")))
                 .orElse(ResponseEntity.status(404).body(ApiResponse.failure("Show not found with id: " + id)));
+    }
+
+    @GetMapping("/{id}/price-tiers")
+    public ResponseEntity<ApiResponse<List<ShowPriceTier>>> getShowPriceTiers(@PathVariable Long id) {
+        List<ShowPriceTier> tiers = catalogService.getShowPriceTiers(id);
+        return ResponseEntity.ok(ApiResponse.success(tiers, "Price tiers fetched successfully"));
     }
 
     @PostMapping

@@ -1,5 +1,6 @@
 package com.ticketflow.common.dto;
 
+import com.ticketflow.common.enums.PaymentProvider;
 import com.ticketflow.common.enums.PaymentStatus;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -18,8 +19,10 @@ public class PaymentResponse {
     private String bookingId;
     private BigDecimal amount;
     private PaymentStatus status;
+    private PaymentProvider provider;
     private String gatewayReference;
     private String failureReason;
+    private String refundReference;
+    private BigDecimal refundedAmount;
     private LocalDateTime timestamp;
 }
-
